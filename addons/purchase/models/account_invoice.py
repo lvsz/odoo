@@ -109,6 +109,20 @@ class AccountMove(models.Model):
         for move in self:
             move.purchase_order_count = len(move.line_ids.purchase_line_id.order_id)
 
+    def _compute_currency_id(self):
+        # OVERRIDE to take currency of purchase into consideration
+        for invoice in self:
+            # First try bank statement, then journal, then purchase
+            currency_id = (
+                invoice.statement_line_id.foreign_currency_id
+                or invoice.journal_id.currency_id
+                or invoice.line_ids.purchase_line_id.currency_id
+            )
+            if currency_id:
+                invoice.currency_id = currency_id
+            else:
+                super(AccountMove, self)._compute_currency_id()
+
     def action_view_source_purchase_orders(self):
         self.ensure_one()
         source_orders = self.line_ids.purchase_line_id.order_id

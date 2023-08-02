@@ -786,3 +786,67 @@ class TestInvoicePurchaseMatch(TestPurchaseToInvoiceCommon):
 
         self.assertEqual(bill.currency_id, self.currency_data['currency'], "The currency of the Bill should be the one of the context")
         self.assertEqual(bill.invoice_line_ids.currency_id, self.currency_data['currency'], "The currency of the Bill lines should be the same as the currency of the Bill")
+
+    def test_onchange_journal_currency(self):
+        """
+        Test that the currency of the Bill and Bill Lines are the same as the
+        Purchase Order, unless the selected Journal has a set currency.
+        """
+
+        eur = self.env.ref('base.EUR')
+        chf = self.env.ref('base.CHF')
+
+        journal_exp = self.env['account.journal'].create({
+            'name': 'Expenses (generic)',
+            'type': 'purchase',
+            'code': 'EXP',
+        })
+        journal_eu_exp = self.env['account.journal'].create({
+            'name': 'Expenses (EUR)',
+            'type': 'purchase',
+            'code': 'EUX',
+            'currency_id': eur.id,
+        })
+
+        # Make a purchase using CHF
+        po = self.env['purchase.order'].with_context(tracking_disable=True).create({
+            'partner_id': self.partner_a.id,
+            'currency_id': chf.id,
+            'order_line': [(0, 0, {
+                'name': self.product_a.name,
+                'product_id': self.product_a.id,
+                'product_qty': 12,
+                'product_uom': self.product_a.uom_id.id,
+                'price_unit': self.product_order.list_price,
+                'taxes_id': False,
+            })]
+        })
+
+        po.button_confirm()
+        po.order_line.qty_received = 12
+        move_id = po.action_create_invoice()['res_id']
+        move_form = Form(self.env['account.move'].browse(move_id))
+        bill = move_form.save()
+
+        self.assertEqual(bill.currency_id, chf,
+                         "The currency of the Bill should be the one set on the PO")
+        self.assertEqual(bill.invoice_line_ids.currency_id, chf,
+                         "The currency of the Bill lines should be the one set on the PO")
+
+        # Change to EUR Journal
+        move_form.journal_id = journal_eu_exp
+        bill = move_form.save()
+
+        self.assertEqual(bill.currency_id, eur,
+                         "The currency of the Bill should be the one set on the Journal")
+        self.assertEqual(bill.invoice_line_ids.currency_id, eur,
+                         "The currency of the Bill lines should be the one set on the Journal")
+
+        # Change to generic Journal
+        move_form.journal_id = journal_exp
+        bill = move_form.save()
+
+        self.assertEqual(bill.currency_id, chf,
+                         "The currency of the Bill should be the one set on the PO")
+        self.assertEqual(bill.invoice_line_ids.currency_id, chf,
+                         "The currency of the Bill lines should be the one set on the PO")
